@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baccarat Strategy</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+            text-align: center;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .prediction-banner {
+            padding: 15px;
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            font-size: 1.2em;
+            display: none;
+        }
+        .player-banner {
+            background-color: #1e90ff;
+        }
+        .banker-banner {
+            background-color: #ff4040;
+        }
+        .buttons {
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button.player {
+            background-color: #1e90ff;
+            color: white;
+        }
+        button.player:hover {
+            background-color: #4682b4;
+        }
+        button.banker {
+            background-color: #ff4040;
+            color: white;
+        }
+        button.banker:hover {
+            background-color: #cc3333;
+        }
+        button.tie {
+            background-color: #32cd32;
+            color: white;
+        }
+        button.tie:hover {
+            background-color: #228b22;
+        }
+        button.undo, button.clear {
+            background-color: #808080;
+            color: white;
+        }
+        button.undo:hover, button.clear:hover {
+            background-color: #666666;
+        }
+        .table-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        #shoeTable {
+            border-collapse: collapse;
+            background-color: #1a1a1a;
+            border: 1px solid #666;
+        }
+        #shoeTable td {
+            width: 50px;
+            height: 50px;
+            border: 1px solid #666;
+            text-align: center;
+            vertical-align: middle;
+        }
+        .player-cell {
+            background: #1e90ff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            margin: 5px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .banker-cell {
+            background: #ff4040;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            margin: 5px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .tie-cell {
+            background: #32cd32;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            margin: 5px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        #log {
+            margin-top: 20px;
+            white-space: pre-wrap;
+            text-align: left;
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        #profit {
+            margin-top: 10px;
+            font-size: 1.1em;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="predictionBanner" class="prediction-banner">
+            Current Bet: <span id="predictionText"></span>
+        </div>
+        <div class="buttons">
+            <button class="player" onclick="addResult('Player')">Player</button>
+            <button class="banker" onclick="addResult('Banker')">Banker</button>
+            <button class="tie" onclick="addResult('Tie')">Tie</button>
+            <button class="undo" onclick="undo()">Undo</button>
+            <button class="clear" onclick="clearAll()">Clear All</button>
+        </div>
+        <div class="table-container">
+            <table id="shoeTable">
+                <tbody id="shoeBody"></tbody>
+            </table>
+        </div>
+        <div id="profit">Total Profit: 0.00</div>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        let shoe = [];
+
+        function addResult(result) {
+            const value = result === 'Banker' ? 1 : result === 'Player' ? 0 : 2;
+            shoe.push(value);
+            updateBet();
+        }
+
+        function undo() {
+            shoe.pop();
+            updateBet();
+        }
+
+        function clearAll() {
+            shoe = [];
+            updateBet();
+        }
+        
+        function updateBet() {
+            // Фильтруем двойки (Tie)
+            const filteredShoe = shoe.filter(item => item !== 2);
+            
+            // Отправляем на сервер только если есть минимум 9 очищенных элементов
+            if (filteredShoe.length >= 4) {
+                fetch('http://192.168.12.222:4005/get_bet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ shoe: filteredShoe })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Response:', data);
+                    updateUI(data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('log').textContent = 'Error: ' + error.message;
+                });
+            } else {
+                // Обновляем интерфейс без отправки на сервер
+                updateUI({
+                    bet_side: null,
+                    shoe: shoe,
+                    profit: 0,
+                    log: `Not enough data (${filteredShoe.length} clean items, need 9)`
+                });
+            }
+        }
+
+        function updateUI(data) {
+            const banner = document.getElementById('predictionBanner');
+            const predictionText = document.getElementById('predictionText');
+            const shoeBody = document.getElementById('shoeBody');
+            const logElement = document.getElementById('log');
+            const profitElement = document.getElementById('profit');
+
+            // Update prediction banner
+            if (data.bet_side) {
+                banner.style.display = 'block';
+                banner.className = `prediction-banner ${data.bet_side === 'Player' ? 'player-banner' : 'banker-banner'}`;
+                predictionText.textContent = data.bet_side;
+            } else {
+                banner.style.display = 'none';
+                predictionText.textContent = '';
+            }
+
+            // Update shoe table - отображаем ВСЕ результаты (включая Tie)
+            shoeBody.innerHTML = '';
+            const results = shoe || []; // Используем исходный массив с Tie
+            const columnDepth = 6;
+            const numColumns = Math.ceil(results.length / columnDepth);
+
+            for (let row = 0; row < columnDepth; row++) {
+                const tr = document.createElement('tr');
+                for (let col = 0; col < numColumns; col++) {
+                    const index = col * columnDepth + row;
+                    const td = document.createElement('td');
+                    if (index < results.length) {
+                        const result = results[index];
+                        let cellContent = '';
+                        let cellClass = '';
+                        if (result === 0) {
+                            cellContent = 'P';
+                            cellClass = 'player-cell';
+                        } else if (result === 1) {
+                            cellContent = 'B';
+                            cellClass = 'banker-cell';
+                        } else if (result === 2) {
+                            cellContent = 'T';
+                            cellClass = 'tie-cell';
+                        }
+                        td.innerHTML = `<div class="${cellClass}">${cellContent}</div>`;
+                    }
+                    tr.appendChild(td);
+                }
+                shoeBody.appendChild(tr);
+            }
+
+            // Update log
+            logElement.textContent = data.log || '';
+
+            // Update profit
+            profitElement.textContent = `Total Profit: ${data.profit ? data.profit.toFixed(2) : '0.00'}`;
+        }
+    </script>
+</body>
+</html>
