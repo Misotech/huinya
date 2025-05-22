@@ -182,7 +182,7 @@
             
             // Отправляем на сервер только если есть минимум 9 очищенных элементов
             if (filteredShoe.length >= 4) {
-                fetch('http://192.168.12.222:4005/get_bet', {
+                fetch('/get_bet', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ shoe: filteredShoe })
