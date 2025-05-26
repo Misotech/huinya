@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Конфигурация стратегии Мартингейла
 MARTINGALE_SEQUENCE = [0, 1, 1, 1, 0, 0]  # 0=Игрок, 1=Банкир
-INITIAL_BANK = 100
+INITIAL_BANK = 110
 INITIAL_BET = 0.2
 RESET_SEQUENCE = False
 RESET_AFTER_LOSSES = float('inf')
