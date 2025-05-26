@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 import logging
 from collections import defaultdict
-import os
 
 app = Flask(__name__)
 CORS(app)
@@ -11,166 +10,99 @@ CORS(app)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Конфигурации стратегий
-STRATEGIES = [
-    
-    {'name': 'add3', 'window': 8, 'enter': 1, 'exit': 0.66}
-]
+# Конфигурация стратегии Мартингейла
+MARTINGALE_SEQUENCE = [0, 1, 1, 1, 0, 0]  # 0=Игрок, 1=Банкир
+INITIAL_BANK = 100
+INITIAL_BET = 0.2
+RESET_SEQUENCE = False
+RESET_AFTER_LOSSES = float('inf')
 
 BANKER_PAYOUT = 0.95
 PLAYER_PAYOUT = 1.0
 
+def calculate_payout(bet, outcome, actual_result):
+    """Рассчитывает выплату для ставки."""
+    if outcome != actual_result:
+        return -bet
+    if outcome == 0:  # Игрок
+        return bet
+    else:  # Банкир
+        return bet * 0.95
+
 def calculate_full_profit(filtered_shoe):
-    active_strategies = []
-    total_bets = total_wins = 0
+    bank = INITIAL_BANK
+    bet = INITIAL_BET
+    seq_index = 0
+    total_bets = 0
+    total_wins = 0
     total_profit = 0.0
     bets_history = []
     bet_log = []
+    bankrupt = False
+    bankrupt_hand = None
     
     # Инициализация лога
-    bet_log.append("\nЛог ставок для последовательности:")
-    bet_log.append(f"{'Индекс':<8} {'Ставка':<8} {'Результат':<10} {'Прибыль':<10} {'Окно':<30} {'Данные окна':<30}")
-    bet_log.append("-" * 86)
+    bet_log.append(f"{'Индекс':<8} {'Ставка':<8} {'Сумма':<10} {'Результат':<10} {'Прибыль':<10} {'Банкролл':<12} {'Поз. посл.':<12}")
+    bet_log.append("-" * 70)
     
-    next_bet_side = None  # Прогноз для следующей ставки
-    
-    for i in range(len(filtered_shoe)):
-        # Определяем прогноз для текущего шага на основе предыдущих данных
-        banker_bets = player_bets = 0
-        windows_info = []
-        temp_active = []
+    for i, result in enumerate(filtered_shoe):
+        # Проверяем на разорение
+        if bank < bet:
+            bankrupt = True
+            bankrupt_hand = i
+            bet_log.append(f"{i:<8} {'-':<8} {bet:>10.2f} {'Разорение':<10} {total_profit:>10.2f} {bank:>12.2f} {seq_index:<12}")
+            break
         
-        # Анализ активных стратегий
-        for strat_info in active_strategies:
-            strat = strat_info['strat']
-            window = filtered_shoe[max(0, i-strat['window']):i]
-            
-            if len(window) >= strat['window']//2:
-                banker_ratio = sum(window)/len(window) if window else 0
-                player_ratio = 1 - banker_ratio if window else 0
-                
-                if (strat_info['bet_type'] == 1 and banker_ratio <= strat['exit']) or \
-                   (strat_info['bet_type'] == 0 and player_ratio <= strat['exit']):
-                    continue
-                else:
-                    temp_active.append(strat_info)
-                    if strat_info['bet_type'] == 1:
-                        banker_bets += 1
-                        windows_info.append(f"{strat['name']}({strat['window']})")
-                    else:
-                        player_bets += 1
-                        windows_info.append(f"{strat['name']}({strat['window']})")
+        # Определяем сторону ставки
+        outcome = MARTINGALE_SEQUENCE[seq_index]
+        bet_side = 'Игрок' if outcome == 0 else 'Банкир'
         
-        # Активация новых стратегий
-        for strat in STRATEGIES:
-            if i >= strat['window']//2 and i < strat['window']:
-                window = filtered_shoe[max(0, i-strat['window']):i]
-                if len(window) < strat['window']//2:
-                    continue
-                banker_ratio = sum(window)/len(window) if window else 0
-                player_ratio = 1 - banker_ratio if window else 0
-                
-                if banker_ratio >= strat['enter']:
-                    temp_active.append({'strat': strat, 'bet_type': 1})
-                    banker_bets += 1
-                    windows_info.append(f"{strat['name']}({strat['window']})")
-                elif player_ratio >= strat['enter']:
-                    temp_active.append({'strat': strat, 'bet_type': 0})
-                    player_bets += 1
-                    windows_info.append(f"{strat['name']}({strat['window']})")
+        # Рассчитываем выплату
+        total_bets += 1
+        payout = calculate_payout(bet, outcome, result)
+        total_profit += payout
+        bank += payout
         
-        # Определяем прогноз для текущего шага
-        current_bet_side = 'Banker' if banker_bets > player_bets else 'Player' if player_bets > banker_bets else None
-        
-        # Формирование строки лога
-        windows_str = ", ".join(windows_info) if windows_info else "Нет"
-        window_data = str(filtered_shoe[max(0, i-max(s['window'] for s in STRATEGIES)):i]) if windows_info else "[]"
-        
-        # Расчёт прибыли для текущего шага, если есть ставка
-        if i >= min(s['window'] for s in STRATEGIES)//2 and current_bet_side is not None:
-            current_result = filtered_shoe[i]
-            total_bets += 1
-            if current_bet_side == 'Banker' and current_result == 1:
-                total_wins += 1
-                total_profit += BANKER_PAYOUT
-                bets_history.append({'index': i, 'bet': 'Banker', 'outcome': 'Win', 'profit': BANKER_PAYOUT})
-                bet_log.append(f"{i:<8} {'Banker':<8} {'Выигрыш':<10} {total_profit:>10.2f} {windows_str:<30} {window_data:<30}")
-            elif current_bet_side == 'Player' and current_result == 0:
-                total_wins += 1
-                total_profit += PLAYER_PAYOUT
-                bets_history.append({'index': i, 'bet': 'Player', 'outcome': 'Win', 'profit': PLAYER_PAYOUT})
-                bet_log.append(f"{i:<8} {'Player':<8} {'Выигрыш':<10} {total_profit:>10.2f} {windows_str:<30} {window_data:<30}")
-            else:
-                total_profit -= 1
-                bets_history.append({'index': i, 'bet': current_bet_side, 'outcome': 'Loss', 'profit': -1})
-                bet_log.append(f"{i:<8} {current_bet_side:<8} {'Проигрыш':<10} {total_profit:>10.2f} {windows_str:<30} {window_data:<30}")
+        # Логируем результат
+        if payout > 0:
+            total_wins += 1
+            outcome_str = 'Выигрыш'
+            bets_history.append({'index': i, 'bet': bet_side, 'bet_amount': bet, 'outcome': 'Выигрыш', 'profit': payout, 'bankroll': bank})
         else:
-            bet_log.append(f"{i:<8} {'-':<8} {'-':<10} {total_profit:>10.2f} {windows_str:<30} {window_data:<30}")
+            outcome_str = 'Проигрыш'
+            bets_history.append({'index': i, 'bet': bet_side, 'bet_amount': bet, 'outcome': 'Проигрыш', 'profit': payout, 'bankroll': bank})
         
-        # Обновляем активные стратегии и прогноз для следующего шага
-        active_strategies = temp_active
-        next_bet_side = current_bet_side
-    
-    # Добавляем прогноз для следующего шага в лог
-    banker_bets = player_bets = 0
-    windows_info = []
-    temp_active = []
-    
-    # Анализ активных стратегий для последнего шага
-    for strat_info in active_strategies:
-        strat = strat_info['strat']
-        window = filtered_shoe[max(0, len(filtered_shoe)-strat['window']):len(filtered_shoe)]
+        bet_log.append(f"{i:<8} {bet_side:<8} {bet:>10.2f} {outcome_str:<10} {total_profit:>10.2f} {bank:>12.2f} {seq_index:<12}")
         
-        if len(window) >= strat['window']//2:
-            banker_ratio = sum(window)/len(window) if window else 0
-            player_ratio = 1 - banker_ratio if window else 0
-            
-            if (strat_info['bet_type'] == 1 and banker_ratio <= strat['exit']) or \
-               (strat_info['bet_type'] == 0 and player_ratio <= strat['exit']):
-                continue
-            else:
-                temp_active.append(strat_info)
-                if strat_info['bet_type'] == 1:
-                    banker_bets += 1
-                    windows_info.append(f"{strat['name']}({strat['window']})")
-                else:
-                    player_bets += 1
-                    windows_info.append(f"{strat['name']}({strat['window']})")
+        # Обновляем ставку и индекс последовательности
+        if payout > 0:
+            bet = INITIAL_BET
+            seq_index = 0 if RESET_SEQUENCE else (seq_index + 1) % len(MARTINGALE_SEQUENCE)
+        else:
+            bet *= 2
+            seq_index = (seq_index + 1) % len(MARTINGALE_SEQUENCE)
+            if seq_index == 0 and (i + 1) % len(MARTINGALE_SEQUENCE) == 0:
+                bet = INITIAL_BET if (i + 1) >= RESET_AFTER_LOSSES else bet
     
-    # Активация новых стратегий для последнего шага
-    for strat in STRATEGIES:
-        if len(filtered_shoe) >= strat['window']//2 and len(filtered_shoe) < strat['window']:
-            window = filtered_shoe[max(0, len(filtered_shoe)-strat['window']):len(filtered_shoe)]
-            if len(window) < strat['window']//2:
-                continue
-            banker_ratio = sum(window)/len(window) if window else 0
-            player_ratio = 1 - banker_ratio if window else 0
-            
-            if banker_ratio >= strat['enter']:
-                temp_active.append({'strat': strat, 'bet_type': 1})
-                banker_bets += 1
-                windows_info.append(f"{strat['name']}({strat['window']})")
-            elif player_ratio >= strat['enter']:
-                temp_active.append({'strat': strat, 'bet_type': 0})
-                player_bets += 1
-                windows_info.append(f"{strat['name']}({strat['window']})")
+    # Прогноз для следующей ставки
+    next_outcome = MARTINGALE_SEQUENCE[seq_index]
+    next_bet_side = 'Игрок' if next_outcome == 0 else 'Банкир'
+    next_bet_amount = bet  # Сохраняем сумму следующей ставки
     
-    # Финальный прогноз
-    next_bet_side = 'Banker' if banker_bets > player_bets else 'Player' if player_bets > banker_bets else None
+    # Добавляем прогноз в лог
+    bet_log.append(f"{len(filtered_shoe):<8} {next_bet_side:<8} {bet:>10.2f} {'Прогноз':<10} {total_profit:>10.2f} {bank:>12.2f} {seq_index:<12}")
+    bet_log.append("-" * 70)
     
-    # Добавляем строку с прогнозом в лог
-    windows_str = ", ".join(windows_info) if windows_info else "Нет"
-    window_data = str(filtered_shoe[max(0, len(filtered_shoe)-max(s['window'] for s in STRATEGIES)):len(filtered_shoe)]) if windows_info else "[]"
-    bet_log.append(f"{len(filtered_shoe):<8} {next_bet_side or '-':<8} {'Прогноз':<10} {total_profit:>10.2f} {windows_str:<30} {window_data:<30}")
-    
-    bet_log.append("-" * 86)
     win_rate = total_wins / total_bets if total_bets > 0 else 0
     return next_bet_side, round(total_profit, 2), bets_history, bet_log, {
         'total_profit': round(total_profit, 2),
         'total_bets': total_bets,
         'total_wins': total_wins,
-        'win_rate': round(win_rate, 4)
-    }
+        'win_rate': round(win_rate, 4),
+        'bankrupt': bankrupt,
+        'bankrupt_hand': bankrupt_hand,
+        'final_bankroll': round(bank, 2)
+    }, next_bet_amount
 
 @app.route('/')
 def index():
@@ -181,31 +113,20 @@ def get_bet():
     try:
         data = request.get_json()
         if not data or 'shoe' not in data:
-            return jsonify({'error': 'Missing shoe field'}), 400
+            return jsonify({'error': 'Отсутствует поле shoe'}), 400
 
         shoe = data['shoe']
         if not isinstance(shoe, list) or not all(x in [0, 1, 2] for x in shoe):
-            return jsonify({'error': 'Invalid shoe format'}), 400
+            return jsonify({'error': 'Неверный формат шуза'}), 400
 
         filtered_shoe = [x for x in shoe if x != 2]
         
-        # Минимальное требование - 4 элемента (window//2 для наименьшего окна 9)
-        min_window = min(s['window'] for s in STRATEGIES) // 2
-        if len(filtered_shoe) < min_window:
-            return jsonify({
-                'shoe': shoe,
-                'bet_side': None,
-                'profit': 0,
-                'bets_history': [],
-                'log': f"Ожидаем накопление {min_window} элементов (без Tie) для первого прогноза. Текущее количество: {len(filtered_shoe)}",
-                'stats': {'total_profit': 0, 'total_bets': 0, 'total_wins': 0, 'win_rate': 0}
-            })
-        
-        bet_side, total_profit, bets_history, bet_log, stats = calculate_full_profit(filtered_shoe)
+        bet_side, total_profit, bets_history, bet_log, stats, next_bet_amount = calculate_full_profit(filtered_shoe)
 
         return jsonify({
             'shoe': shoe,
             'bet_side': bet_side,
+            'next_bet_amount': next_bet_amount,  # Добавляем сумму следующей ставки
             'profit': total_profit,
             'bets_history': bets_history,
             'log': "\n".join(bet_log),
@@ -213,7 +134,7 @@ def get_bet():
         })
 
     except Exception as e:
-        logger.error(f"Error in get_bet: {str(e)}")
+        logger.error(f"Ошибка в get_bet: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
