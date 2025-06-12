@@ -2,253 +2,146 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Стратегия Баккара</title>
+    <title>Baccarat Tracker</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f4f4f4;
-            text-align: center;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .prediction-banner {
-            padding: 15px;
-            color: white;
-            text-align: center;
-            margin-bottom: 20px;
-            border-radius: 5px;
-            font-size: 1.2em;
-            display: none;
-        }
-        .player-banner {
-            background-color: #1e90ff; /* Синий для Игрока */
-        }
-        .banker-banner {
-            background-color: #ff4040; /* Красный для Банкира */
-        }
-        .buttons {
-            margin-bottom: 20px;
+            font-family: sans-serif;
+            padding: 20px;
         }
         button {
-            padding: 10px 20px;
             margin: 5px;
-            border: none;
-            border-radius: 5px;
-            font-size: 1em;
-            cursor: pointer;
-            transition: background-color 0.2s;
+            padding: 10px 20px;
+            font-size: 16px;
         }
-        button.player {
-            background-color: #1e90ff;
-            color: white;
+        label {
+            margin-right: 15px;
         }
-        button.player:hover {
-            background-color: #4682b4;
-        }
-        button.banker {
-            background-color: #ff4040;
-            color: white;
-        }
-        button.banker:hover {
-            background-color: #cc3333;
-        }
-        button.tie {
-            background-color: #32cd32;
-            color: white;
-        }
-        button.tie:hover {
-            background-color: #228b22;
-        }
-        button.undo, button.clear {
-            background-color: #808080;
-            color: white;
-        }
-        button.undo:hover, button.clear:hover {
-            background-color: #666666;
-        }
-        .table-container {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
-        }
-        #shoeTable {
-            border-collapse: collapse;
-            background-color: #1a1a1a;
-            border: 1px solid #666;
-        }
-        #shoeTable td {
-            width: 50px;
-            height: 50px;
-            border: 1px solid #666;
-            text-align: center;
-            vertical-align: middle;
-        }
-        .player-cell {
-            background: #1e90ff;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            margin: 5px auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-        }
-        .banker-cell {
-            background: #ff4040;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            margin: 5px auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-        }
-        .tie-cell {
-            background: #32cd32;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            margin: 5px auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-        }
-        #log {
+        #prediction, #pnl, #history, #tie-stats {
             margin-top: 20px;
-            white-space: pre-wrap;
-            text-align: left;
-            background-color: white;
-            padding: 15px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            font-size: 18px;
         }
-        #profit {
+        #pnl {
+            color: darkgreen;
+            font-weight: bold;
+        }
+        #history {
+            font-size: 14px;
             margin-top: 10px;
-            font-size: 1.1em;
-            color: #333;
+        }
+        .tie {
+            color: darkorange;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div id="predictionBanner" class="prediction-banner">
-            Текущая ставка: <span id="predictionText"></span>
-        </div>
-        <div class="buttons">
-            <button class="player" onclick="addResult('Игрок')">Игрок</button>
-            <button class="banker" onclick="addResult('Банкир')">Банкир</button>
-            <button class="tie" onclick="addResult('Ничья')">Ничья</button>
-            <button class="undo" onclick="undo()">Отменить</button>
-            <button class="clear" onclick="clearAll()">Очистить</button>
-        </div>
-        <div class="table-container">
-            <table id="shoeTable">
-                <tbody id="shoeBody"></tbody>
-            </table>
-        </div>
-        <div id="profit">Общая прибыль: 0.00</div>
-        <div id="log"></div>
-    </div>
+
+    <h2>Ввод результата раунда</h2>
+    <button onclick="addResult('Игрок')">Игрок</button>
+    <button onclick="addResult('Банкир')">Банкир</button>
+    <button onclick="addResult('Ничья')">Ничья</button><br><br>
+
+    <label><input type="checkbox" id="ppCheckbox"> Player Pair</label>
+    <label><input type="checkbox" id="bpCheckbox"> Banker Pair</label>
+
+    <div id="prediction">Ожидание ввода...</div>
+    <div id="pnl">PNL: 0</div>
+    <div id="tie-stats"></div>
+    <div id="history"></div>
 
     <script>
-        let shoe = [];
+    let shoe = [];
+    let pnl = 0;
+    let betHistory = [];
 
-        function addResult(result) {
-            const value = result === 'Банкир' ? 1 : result === 'Игрок' ? 0 : 2;
-            shoe.push(value);
-            updateBet();
-        }
+    function addResult(result) {
+        let val;
+        const pp = document.getElementById('ppCheckbox').checked;
+        const bp = document.getElementById('bpCheckbox').checked;
 
-        function undo() {
-            shoe.pop();
-            updateBet();
-        }
+        if (result === 'Игрок') val = pp ? 3 : 0;
+        else if (result === 'Банкир') val = bp ? 4 : 1;
+        else if (result === 'Ничья') val = 2;
 
-        function clearAll() {
-            shoe = [];
-            updateBet();
-        }
+        shoe.push(val);
 
-        function updateBet() {
-            fetch('/get_bet', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ shoe: shoe })
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('Response:', data);
-                updateUI(data);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                document.getElementById('log').textContent = 'Ошибка: ' + error.message;
+        // сохранить чекбокс-состояния
+        const currentPP = pp;
+        const currentBP = bp;
+
+        // сбросить чекбоксы
+        document.getElementById('ppCheckbox').checked = false;
+        document.getElementById('bpCheckbox').checked = false;
+
+        updateBet(currentPP, currentBP);
+    }
+
+    function updateBet(ppBet, bpBet) {
+        fetch('/get_bet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shoe })
+        })
+        .then(r => r.json())
+        .then(data => {
+            const predictionText = data.stats.pair_prediction_result;
+            document.getElementById('prediction').innerText = `Прогноз: ${predictionText}`;
+
+            // расчет PNL по последнему ходу
+            const lastVal = shoe[shoe.length - 1];
+            let lastPnl = 0;
+
+            if (ppBet && predictionText.includes("Player Pair")) {
+                if (lastVal === 3) lastPnl += 11; // win
+                else lastPnl -= 1; // loss
+            }
+            if (bpBet && predictionText.includes("Banker Pair")) {
+                if (lastVal === 4) lastPnl += 11;
+                else lastPnl -= 1;
+            }
+
+            pnl += lastPnl;
+            document.getElementById('pnl').innerText = `PNL: ${pnl}`;
+
+            // история
+            betHistory.push({
+                round: shoe.length,
+                result: lastVal,
+                pp: ppBet,
+                bp: bpBet,
+                pnl: lastPnl,
+                prediction: predictionText
             });
+            updateHistory();
+            updateTieStats();
+        });
+    }
+
+    function updateHistory() {
+        let html = "<h3>История ставок:</h3><ul>";
+        for (let entry of betHistory) {
+            let resText = entry.result === 0 ? "Игрок" :
+                          entry.result === 1 ? "Банкир" :
+                          entry.result === 2 ? "<span class='tie'>Ничья</span>" :
+                          entry.result === 3 ? "Игрок+Пара" :
+                          "Банкир+Пара";
+            html += `<li>Раунд ${entry.round}: ${resText}, Прогноз: ${entry.prediction}, Прибыль: ${entry.pnl}</li>`;
         }
+        html += "</ul>";
+        document.getElementById('history').innerHTML = html;
+    }
 
-        function updateUI(data) {
-            const banner = document.getElementById('predictionBanner');
-            const predictionText = document.getElementById('predictionText');
-            const shoeBody = document.getElementById('shoeBody');
-            const logElement = document.getElementById('log');
-            const profitElement = document.getElementById('profit');
-
-            // Обновляем баннер с прогнозом
-            if (data.bet_side) {
-                banner.style.display = 'block';
-                banner.className = `prediction-banner ${data.bet_side === 'Игрок' ? 'player-banner' : 'banker-banner'}`;
-                const betAmount = data.next_bet_amount ? data.next_bet_amount.toFixed(2) : '0.00';
-                predictionText.textContent = `${data.bet_side} (${betAmount}$)`;
-            } else {
-                banner.style.display = 'none';
-                predictionText.textContent = '';
-            }
-
-            // Обновляем таблицу шуза
-            shoeBody.innerHTML = '';
-            const results = data.shoe || [];
-            const columnDepth = 6;
-            const numColumns = Math.ceil(results.length / columnDepth);
-
-            for (let row = 0; row < columnDepth; row++) {
-                const tr = document.createElement('tr');
-                for (let col = 0; col < numColumns; col++) {
-                    const index = col * columnDepth + row;
-                    const td = document.createElement('td');
-                    if (index < results.length) {
-                        const result = results[index];
-                        let cellContent = '';
-                        let cellClass = '';
-                        if (result === 0) {
-                            cellContent = 'И';
-                            cellClass = 'player-cell';
-                        } else if (result === 1) {
-                            cellContent = 'Б';
-                            cellClass = 'banker-cell';
-                        } else if (result === 2) {
-                            cellContent = 'Н';
-                            cellClass = 'tie-cell';
-                        }
-                        td.innerHTML = `<div class="${cellClass}">${cellContent}</div>`;
-                    }
-                    tr.appendChild(td);
-                }
-                shoeBody.appendChild(tr);
-            }
-
-            // Обновляем лог
-            logElement.textContent = data.log || '';
-
-            // Обновляем прибыль
-            profitElement.textContent = `Общая прибыль: ${data.profit ? data.profit.toFixed(2) : '0.00'}`;
+    function updateTieStats() {
+        const tieIndexes = shoe
+            .map((v, i) => v === 2 ? i + 1 : null)
+            .filter(i => i !== null);
+        if (tieIndexes.length > 0) {
+            document.getElementById('tie-stats').innerHTML =
+                `Ничьи выпали в раундах: ${tieIndexes.join(', ')}`;
+        } else {
+            document.getElementById('tie-stats').innerText = '';
         }
+    }
     </script>
+
 </body>
 </html>
